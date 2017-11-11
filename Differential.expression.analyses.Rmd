@@ -102,7 +102,7 @@ sampleDat = sampleDat[order(sampleDat[,'sex'], sampleDat[,'tissue'],
 kable(sampleDat, row.names=FALSE, format.args=list(big.mark=','))
 ```
 
-```{r build_dds, cache=FALSE}
+```{r build_dds, cache=TRUE}
 # Make sure columns in countData are in the same order and rows in colData
 countData = countData[,rownames(colData)]
 
@@ -142,13 +142,13 @@ colnames(rldcounts) = rownames(dds@colData)
 # Pairwise Correlations
 All pairwise correlations of gene expression among samples
 
-```{r pairwise_correlation_scatter, fig.width=20, fig.height=20, cache=FALSE}
+```{r pairwise_correlation_scatter, fig.width=20, fig.height=20, cache=TRUE}
 # Plot scatter plot of all pairwise correlations
 print(pairs(rldcounts, pch=".", upper.panel = panel.cor, diag.panel = panel.hist, lower.panel = panel.lm))
 ```
 
 
-```{r similarity_heatmap_top_20_expressed_genes, cache=FALSE}
+```{r similarity_heatmap_top_20_expressed_genes, cache=TRUE}
 # Heatmap of top 10 expressed genes
 dds = DESeq(dds)
 df = data.frame(dds@colData[,c('sex', 'genotype', 'heathours')])
@@ -157,7 +157,7 @@ pheatmap(rldcounts[select,], cluster_rows=FALSE, show_rownames=FALSE, cluster_co
 ```
 
 # Heatmap of Euclidean distance among samples
-```{r sample_distance_heatmap, cache=FALSE}
+```{r sample_distance_heatmap, cache=TRUE}
 # Heatmap of sample distances
 sampleDist = dist(t(rldcounts))
 sampleDistMatrix = as.matrix(sampleDist)
@@ -169,7 +169,7 @@ pheatmap(sampleDistMatrix, clustering_distance_rows=sampleDist, clustering_dista
 
 # PCA to group samples by the two largest principal components. 
 
-```{r pca_tissue_target, cache=FALSE}
+```{r pca_tissue_target, cache=TRUE}
 # PCA 
 plotPCA(rld, intgroup=c("sex", "genotype", "heathours"))
 ```
@@ -178,7 +178,7 @@ plotPCA(rld, intgroup=c("sex", "genotype", "heathours"))
 ## Sex Effects
 **Model:** counts ~ sex
 
-```{r sex_effects, cache=FALSE}
+```{r sex_effects, cache=TRUE}
 design(dds) = ~sex
 dds = DESeq(dds)
 resultsNames(dds)
@@ -186,7 +186,7 @@ res = results(dds)
 summary(res)
 ```
 
-```{r geneList_sex_effects, cache=FALSE}
+```{r geneList_sex_effects, cache=TRUE}
 resGenes = data.frame(res[res$padj <= 0.1 & !is.na(res$padj),])
 resGenes = merge(resGenes, gene2symbol, by=0)
 rownames(resGenes) = resGenes[,1]
@@ -196,10 +196,10 @@ resGenes = resGenes[order(resGenes['log2FoldChange'], decreasing=TRUE),]
 resGenesNI = setIndex(resGenes, 'FBgn')
 ```
 
-```{r scatter_sex_effects, cache=FALSE}
+```{r scatter_sex_effects, cache=TRUE}
 plotMA(res, main='Differential Expression between Sexes (female/male)', ylim=c(-2,2))
 ```
 
 ```{r geneList_heat_effects_display}
-kable(resGenes)
+kable(resGenes[1:10,])
 ```
