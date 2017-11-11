@@ -4,12 +4,8 @@ author: "Haiwang Yang"
 output: knitrBootstrap::bootstrap_document
 ---
 # RNA-seq Summary
-#### Haiwang Yang
-#### *`r Sys.Date()`*
-
 This is a summary of RNA-seq differential expression using the DESeq2 package.
-This document will start with a set of QC metrics. I then proceed with several
-different differential expression models.
+This document will start with a set of QC metrics and ends with an example of different expression analysis between sexes
 
 ```{r knitr_options, include=FALSE}
 base_path = "/Users/yangh13/DE/data/"
