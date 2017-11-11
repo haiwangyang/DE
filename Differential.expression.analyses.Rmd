@@ -1,0 +1,209 @@
+---
+title: "RNA-seq Summary"
+author: "Haiwang Yang"
+output: knitrBootstrap::bootstrap_document
+---
+# RNA-seq Summary
+#### Haiwang Yang
+#### *`r Sys.Date()`*
+
+This is a summary of RNA-seq differential expression using the DESeq2 package.
+This document will start with a set of QC metrics. I then proceed with several
+different differential expression models.
+
+```{r knitr_options, include=FALSE}
+base_path = "/Users/yangh13/DE/data/"
+knitr::opts_chunk$set(fig.width = 8, fig.height=8,
+                      fig.path = paste0(base_path, 'aggregated_results/'),
+                      dpi=150, warning=FALSE, message=FALSE, include=TRUE, echo=FALSE)
+```
+
+```{r library_import}
+library(DESeq2)
+library("pheatmap")
+library("RColorBrewer")
+library(knitr)
+```
+
+```{r useful_func}
+linkify = function(x){
+    # Add link to flybase
+    link = paste0('<a href="http://flybase.org/reports/', x['FBgn'], '.html">','FlyBase', '</a>')
+}
+
+
+setIndex = function(obj, name){
+    # Pull row.names back into the data frame and add a name to them.
+    tmp = cbind(rownames(obj), obj)
+    colnames(tmp) = c(name, colnames(obj))
+    rownames(tmp) = NULL
+    return(tmp)
+}
+
+# Make panel plot of pairwise similarities
+panel.cor <- function(x, y, digits=2, prefix="", cex.cor, ...) {
+    usr <- par("usr")
+    on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- abs(cor(x, y, use="complete.obs"))
+    txt <- format(c(r, 0.123456789), digits=digits)[1]
+    txt <- paste(prefix, txt, sep="")
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = cex.cor * (1 + r) / 2)
+}
+
+panel.hist <- function(x, ...) {
+    usr <- par("usr")
+    on.exit(par(usr))
+    par(usr = c(usr[1:2], 0, 1.5) )
+    h <- hist(x, plot = FALSE)
+    breaks <- h$breaks
+    nB <- length(breaks)
+    y <- h$counts
+    y <- y/max(y)
+    rect(breaks[-nB], 0, breaks[-1], y, col="white", ...)
+}
+
+panel.lm <- function (x, y, col = par("col"), bg = NA, pch = par("pch"),
+                      cex = 1, col.smooth = "red", ...) {
+    points(x, y, pch = pch, col = col, bg = bg, cex = cex)
+    abline(stats::lm(y ~ x), col = col.smooth, ...)
+}
+
+
+```
+
+# Experimental Design
+The below table shows the basic experimental design for the RNA-seq.
+
+```{r import_data}
+# Import reference
+gene2symbol = read.csv(paste0(base_path, 'gene2symbol.csv'))
+gene2symbol['linkOut'] = apply(gene2symbol, 1, linkify)
+rownames(gene2symbol) = gene2symbol[,1]
+gene2symbol = gene2symbol[-1]
+
+# Set data directory
+dataDir = paste0(base_path, 'aggregated_results/')
+
+# Import Alignments
+aln = read.table(paste0(base_path, 'bowtie2_summary.csv'), sep=',', header=TRUE)
+aln = aln[c('SM', 'PU', 'Number.Uniquely.Aligned')]
+
+# Import metadata and counts
+colData = read.table(paste0(base_path, 'design.csv'), header=TRUE, sep=',', row.names='sample_id')
+countData = read.table(paste0(base_path, 'htseq.counts'), header=TRUE, sep=',', row.names='FBgn')
+
+# Make sample table
+cDat = cbind(rownames(colData), colData)
+rownames(cDat) = NULL
+colnames(cDat)[1] = 'SM'
+sampleDat = merge(cDat, aln, by='SM', all=TRUE)
+sampleDat = sampleDat[order(sampleDat[,'sex'], sampleDat[,'tissue'],
+                            sampleDat[,'genotype'], sampleDat[,'heathours'],
+                            sampleDat[,'SM'], sampleDat[,'PU']),]
+
+kable(sampleDat, row.names=FALSE, format.args=list(big.mark=','))
+```
+
+```{r build_dds, cache=FALSE}
+# Make sure columns in countData are in the same order and rows in colData
+countData = countData[,rownames(colData)]
+
+# Drop ERCC and __ samples
+countData = countData[grep("ERCC", rownames(countData), invert=TRUE),]
+countData = countData[grep("__", rownames(countData), invert=TRUE),]
+
+# Drop rows with 0 counts
+rc = rowSums(countData)
+T = countData[rc>0,]
+
+# Build DESeq object
+dds = DESeqDataSetFromMatrix(T, colData, design=~sex + genotype + heathours)
+dds = estimateSizeFactors(dds)
+
+# Set reference tissue level to whole
+dds$sex = relevel(dds$sex, ref = "male")
+dds$genotype = relevel(dds$genotype, ref= "w1118")
+dds$heathours = relevel(dds$heathours, ref = "0h")
+
+# Pre-filter counts below low expression threshold LET
+normCounts = counts(dds, normalized=TRUE)
+LET = as.numeric(readChar(paste0(base_path, 'lowExpressionThreshold.txt'), nchars=1e6))
+oLET = 2^LET - 1
+
+indNCS_DESeq = which(apply(normCounts, 1, function(x){{all(x<oLET)}}) == TRUE)
+keepDESeq = rep(TRUE, nrow(normCounts))
+keepDESeq[indNCS_DESeq] = FALSE
+dds = dds[keepDESeq,]
+
+# Generate rlog transformed data
+rld = rlog(dds)
+rldcounts = assay(rld)
+colnames(rldcounts) = rownames(dds@colData)
+```
+
+# Pairwise Correlations
+All pairwise correlations of gene expression among samples
+
+```{r pairwise_correlation_scatter, fig.width=20, fig.height=20, cache=FALSE}
+# Plot scatter plot of all pairwise correlations
+print(pairs(rldcounts, pch=".", upper.panel = panel.cor, diag.panel = panel.hist, lower.panel = panel.lm))
+```
+
+
+```{r similarity_heatmap_top_20_expressed_genes, cache=FALSE}
+# Heatmap of top 10 expressed genes
+dds = DESeq(dds)
+df = data.frame(dds@colData[,c('sex', 'genotype', 'heathours')])
+select = order(rowMeans(counts(dds, normalized=TRUE)), decreasing = TRUE)[1:20]
+pheatmap(rldcounts[select,], cluster_rows=FALSE, show_rownames=FALSE, cluster_cols=FALSE, annotation_col=df )
+```
+
+# Heatmap of Euclidean distance among samples
+```{r sample_distance_heatmap, cache=FALSE}
+# Heatmap of sample distances
+sampleDist = dist(t(rldcounts))
+sampleDistMatrix = as.matrix(sampleDist)
+rownames(sampleDistMatrix) = paste(rld$sex, rld$genotype, rld$heathours, sep='-')
+colnames(sampleDistMatrix) = NULL
+colors = colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+pheatmap(sampleDistMatrix, clustering_distance_rows=sampleDist, clustering_distance_cols=sampleDist, col=colors)
+```
+
+# PCA to group samples by the two largest principal components. 
+
+```{r pca_tissue_target, cache=FALSE}
+# PCA 
+plotPCA(rld, intgroup=c("sex", "genotype", "heathours"))
+```
+
+# Differential Expression
+## Sex Effects
+**Model:** counts ~ sex
+
+```{r sex_effects, cache=FALSE}
+design(dds) = ~sex
+dds = DESeq(dds)
+resultsNames(dds)
+res = results(dds)
+summary(res)
+```
+
+```{r geneList_sex_effects, cache=FALSE}
+resGenes = data.frame(res[res$padj <= 0.1 & !is.na(res$padj),])
+resGenes = merge(resGenes, gene2symbol, by=0)
+rownames(resGenes) = resGenes[,1]
+resGenes = resGenes[,-1]
+resGenes = resGenes[c("symbol", "baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj", "linkOut")]
+resGenes = resGenes[order(resGenes['log2FoldChange'], decreasing=TRUE),]
+resGenesNI = setIndex(resGenes, 'FBgn')
+```
+
+```{r scatter_sex_effects, cache=FALSE}
+plotMA(res, main='Differential Expression between Sexes (female/male)', ylim=c(-2,2))
+```
+
+```{r geneList_heat_effects_display}
+kable(resGenes)
+```
